@@ -1,6 +1,7 @@
-function calcPmt(principal, r, months) {
-  if (r === 0) return principal / months
-  return (principal * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1)
+function calcPmt(principal, r, months, balloon = 0) {
+  if (r === 0) return (principal - balloon) / months
+  const factor = Math.pow(1 + r, months)
+  return (principal * factor - balloon) * r / (factor - 1)
 }
 
 function calcMonths(principal, r, pmt) {
@@ -30,12 +31,12 @@ function simMonthsCPI(principal, r, cpiM, pmt, maxM = 600) {
   return Infinity
 }
 
-function calcPmtCPI(principal, r, cpiM, months) {
+function calcPmtCPI(principal, r, cpiM, months, balloon = 0) {
   let lo = principal * (r + cpiM + 0.001)
   let hi = principal * 5
   for (let i = 0; i < 80; i++) {
     const mid = (lo + hi) / 2
-    if (simBal(principal, r, cpiM, mid, months) > 0) lo = mid
+    if (simBal(principal, r, cpiM, mid, months) > balloon) lo = mid
     else hi = mid
     if (hi - lo < 0.01) break
   }
@@ -66,12 +67,14 @@ function buildAmort(principal, r, cpiM, pmt, months) {
   return rows
 }
 
-export function runCalc({ loan, mode, monthly, term, rate, usePrime, prime, useCPI, cpi, useInf, inf }) {
+export function runCalc({ loan, mode, monthly, term, rate, usePrime, prime, useCPI, cpi, useInf, inf, useBalloon, balloon }) {
   const annualRate = rate / 100 + (usePrime ? prime / 100 : 0)
   const r = annualRate / 12
   const cpiAnnual = useCPI ? cpi / 100 : 0
   const cpiM = useCPI ? Math.pow(1 + cpiAnnual, 1 / 12) - 1 : 0
   const infRate = useCPI ? cpiAnnual : useInf ? inf / 100 : 0
+
+  const balloonAmt = (useBalloon && mode === 'term') ? Math.min(balloon, loan - 1) : 0
 
   let months, pmt
 
@@ -88,9 +91,9 @@ export function runCalc({ loan, mode, monthly, term, rate, usePrime, prime, useC
     pmt = monthly
   } else {
     months = term
-    if (r === 0) pmt = loan / months
-    else if (!useCPI) pmt = calcPmt(loan, r, months)
-    else pmt = calcPmtCPI(loan, r, cpiM, months)
+    if (r === 0) pmt = (loan - balloonAmt) / months
+    else if (!useCPI) pmt = calcPmt(loan, r, months, balloonAmt)
+    else pmt = calcPmtCPI(loan, r, cpiM, months, balloonAmt)
   }
 
   if (!isFinite(months) || isNaN(months) || !isFinite(pmt) || isNaN(pmt)) {
@@ -98,7 +101,9 @@ export function runCalc({ loan, mode, monthly, term, rate, usePrime, prime, useC
   }
 
   const amort = buildAmort(loan, r, cpiM, pmt, Math.ceil(months))
-  const totalPaid = amort.reduce((s, row) => s + row.payment, 0)
+  const finalBalance = amort[amort.length - 1].balance
+  const monthlyTotal = amort.reduce((s, row) => s + row.payment, 0)
+  const totalPaid = monthlyTotal + (balloonAmt > 0 ? finalBalance : 0)
   const totalInt = amort.reduce((s, row) => s + row.interest, 0)
   const totalIdx = amort.reduce((s, row) => s + row.indexation, 0)
   const totalPrinc = totalPaid - totalInt - totalIdx
@@ -115,5 +120,6 @@ export function runCalc({ loan, mode, monthly, term, rate, usePrime, prime, useC
     amort,
     infRate,
     showInf: (useCPI || useInf) && infRate > 0,
+    balloonPayment: balloonAmt > 0 ? finalBalance : 0,
   }
 }

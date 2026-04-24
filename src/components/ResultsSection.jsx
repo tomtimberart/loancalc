@@ -13,8 +13,9 @@ export default function ResultsSection({ results, state }) {
     )
   }
 
-  const { annualRate, pmt, months, totalPaid, totalInt, totalIdx, totalPrinc, amort } = results
+  const { annualRate, pmt, months, totalPaid, totalInt, totalIdx, totalPrinc, amort, balloonPayment } = results
   const hasIdx = state.useCPI && totalIdx > 0.5
+  const hasBalloon = balloonPayment > 0.5
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm space-y-5">
@@ -48,13 +49,21 @@ export default function ResultsSection({ results, state }) {
         />
       </div>
 
-      {/* Bottom 2-3 metrics */}
-      <div className={`grid gap-3 ${hasIdx ? 'grid-cols-3' : 'grid-cols-2'}`}>
+      {/* Bottom metrics */}
+      <div className={`grid gap-3 grid-cols-2 ${hasIdx || hasBalloon ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
         <MetricBox label="סה״כ ריבית" value={fmtMoney(totalInt)} valueClass="text-red-500" />
         {hasIdx && (
           <MetricBox label="עלות הצמדה" value={fmtMoney(totalIdx)} valueClass="text-purple-600" />
         )}
-        <MetricBox label="סה״כ התשלום" value={fmtMoney(totalPaid)} />
+        {hasBalloon && (
+          <MetricBox
+            label="תשלום בלון סופי"
+            value={fmtMoney(balloonPayment)}
+            valueClass="text-violet-600"
+            sub="תשלום חד-פעמי בסוף"
+          />
+        )}
+        <MetricBox label="סה״כ התשלום" value={fmtMoney(totalPaid)} sub={hasBalloon ? 'כולל בלון' : ''} />
       </div>
 
       {/* Bar chart */}

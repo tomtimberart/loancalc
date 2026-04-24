@@ -19,6 +19,8 @@ const INIT = {
   useInf: false,
   inf: 3.0,
   primeHint: '',
+  useBalloon: false,
+  balloon: 0,
 }
 
 export default function App() {
@@ -103,16 +105,35 @@ export default function App() {
               color="#16a34a"
             />
           ) : (
-            <SliderControl
-              label="תקופה"
-              value={s.term}
-              onChange={upd('term')}
-              min={6}
-              max={360}
-              step={1}
-              suffix=" חודשים"
-              color="#16a34a"
-            />
+            <>
+              <SliderControl
+                label="תקופה"
+                value={s.term}
+                onChange={upd('term')}
+                min={6}
+                max={360}
+                step={1}
+                suffix=" חודשים"
+                color="#16a34a"
+              />
+              <ToggleSection
+                title="🎈 הלוואת בלון"
+                subtitle="יתרת קרן לתשלום חד-פעמי בסוף התקופה"
+                checked={s.useBalloon}
+                onToggle={tog('useBalloon')}
+              >
+                <SliderControl
+                  label="יתרת בלון"
+                  value={s.balloon}
+                  onChange={upd('balloon')}
+                  min={0}
+                  max={s.loan}
+                  step={5000}
+                  prefix="₪"
+                  color="#8b5cf6"
+                />
+              </ToggleSection>
+            </>
           )}
         </div>
 
