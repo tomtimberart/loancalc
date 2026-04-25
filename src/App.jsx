@@ -4,6 +4,7 @@ import ModeToggle from './components/ModeToggle'
 import SliderControl from './components/SliderControl'
 import ToggleSection from './components/ToggleSection'
 import ResultsSection from './components/ResultsSection'
+import CompareSection from './components/CompareSection'
 import InflationNote from './components/InflationNote'
 
 const INIT = {
@@ -23,20 +24,49 @@ const INIT = {
   balloon: 0,
 }
 
+function loadState(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    return { ...INIT, ...JSON.parse(raw) }
+  } catch {
+    return null
+  }
+}
+
+function saveState(key, state) {
+  const { primeHint: _, ...toSave } = state
+  localStorage.setItem(key, JSON.stringify(toSave))
+}
+
+const makeTog = (setter) => (key) => () =>
+  setter((p) => {
+    const next = { ...p, [key]: !p[key] }
+    if (key === 'useCPI' && next.useCPI) next.useInf = false
+    if (key === 'useInf' && next.useInf) next.useCPI = false
+    return next
+  })
+
+const makeUpd = (setter) => (key) => (val) => setter((p) => ({ ...p, [key]: val }))
+
 export default function App() {
-  const [s, setS] = useState(INIT)
+  const [s, setS] = useState(() => loadState('loancalc_A') ?? INIT)
+  const [sB, setSB] = useState(() => loadState('loancalc_B') ?? INIT)
+  const [compareMode, setCompareMode] = useState(false)
+  const [activeTab, setActiveTab] = useState('A')
 
-  const upd = (key) => (val) => setS((p) => ({ ...p, [key]: val }))
-  const tog = (key) => () =>
-    setS((p) => {
-      const next = { ...p, [key]: !p[key] }
-      // CPI and Inflation are mutually exclusive
-      if (key === 'useCPI' && next.useCPI) next.useInf = false
-      if (key === 'useInf' && next.useInf) next.useCPI = false
-      return next
-    })
+  const updA = makeUpd(setS)
+  const togA = makeTog(setS)
+  const updB = makeUpd(setSB)
+  const togB = makeTog(setSB)
 
-  // Try to fetch current Bank of Israel rate
+  const activeS = compareMode && activeTab === 'B' ? sB : s
+  const activeUpd = compareMode && activeTab === 'B' ? updB : updA
+  const activeTog = compareMode && activeTab === 'B' ? togB : togA
+
+  useEffect(() => { saveState('loancalc_A', s) }, [s])
+  useEffect(() => { saveState('loancalc_B', sB) }, [sB])
+
   useEffect(() => {
     fetch('https://www.boi.org.il/wp-json/boi/v1/interest-rate')
       .then((r) => r.json())
@@ -58,7 +88,16 @@ export default function App() {
       )
   }, [])
 
-  const results = useMemo(() => runCalc(s), [s])
+  const resultsA = useMemo(() => runCalc(s), [s])
+  const resultsB = useMemo(() => runCalc(sB), [sB])
+
+  const handleCompareToggle = () => {
+    if (!compareMode) {
+      setSB((prev) => ({ ...prev }))
+    }
+    setCompareMode((m) => !m)
+    setActiveTab('A')
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 px-4">
@@ -72,7 +111,38 @@ export default function App() {
           <h1 className="text-3xl sm:text-4xl font-black text-gray-900">
             חשב את <span className="text-blue-600">ההלוואה</span> שלך
           </h1>
+          <button
+            onClick={handleCompareToggle}
+            className={`mt-3 text-xs font-bold px-4 py-2 rounded-full border transition-colors ${
+              compareMode
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50'
+            }`}
+          >
+            ⚖️ {compareMode ? 'חזור למסלול יחיד' : 'השווה שני מסלולים'}
+          </button>
         </header>
+
+        {/* Tab switcher */}
+        {compareMode && (
+          <div className="flex rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+            {['A', 'B'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-3 text-sm font-black transition-colors ${
+                  activeTab === tab
+                    ? tab === 'A'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-purple-600 text-white'
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {tab === 'A' ? '📋 מסלול א׳' : '📋 מסלול ב׳'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Basic params card */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
@@ -80,12 +150,12 @@ export default function App() {
             ⚙️ פרמטרים בסיסיים
           </div>
 
-          <ModeToggle mode={s.mode} onChange={upd('mode')} />
+          <ModeToggle mode={activeS.mode} onChange={activeUpd('mode')} />
 
           <SliderControl
             label="סכום ההלוואה"
-            value={s.loan}
-            onChange={upd('loan')}
+            value={activeS.loan}
+            onChange={activeUpd('loan')}
             min={10000}
             max={2000000}
             step={5000}
@@ -93,11 +163,11 @@ export default function App() {
             color="#2563eb"
           />
 
-          {s.mode === 'monthly' ? (
+          {activeS.mode === 'monthly' ? (
             <SliderControl
               label="תשלום חודשי רצוי"
-              value={s.monthly}
-              onChange={upd('monthly')}
+              value={activeS.monthly}
+              onChange={activeUpd('monthly')}
               min={500}
               max={60000}
               step={500}
@@ -108,8 +178,8 @@ export default function App() {
             <>
               <SliderControl
                 label="תקופה"
-                value={s.term}
-                onChange={upd('term')}
+                value={activeS.term}
+                onChange={activeUpd('term')}
                 min={6}
                 max={360}
                 step={1}
@@ -119,15 +189,15 @@ export default function App() {
               <ToggleSection
                 title="🎈 הלוואת בלון"
                 subtitle="יתרת קרן לתשלום חד-פעמי בסוף התקופה"
-                checked={s.useBalloon}
-                onToggle={tog('useBalloon')}
+                checked={activeS.useBalloon}
+                onToggle={activeTog('useBalloon')}
               >
                 <SliderControl
                   label="יתרת בלון"
-                  value={s.balloon}
-                  onChange={upd('balloon')}
+                  value={activeS.balloon}
+                  onChange={activeUpd('balloon')}
                   min={0}
-                  max={s.loan}
+                  max={activeS.loan}
                   step={5000}
                   prefix="₪"
                   color="#8b5cf6"
@@ -145,8 +215,8 @@ export default function App() {
 
           <SliderControl
             label="ריבית שנתית בסיס"
-            value={s.rate}
-            onChange={upd('rate')}
+            value={activeS.rate}
+            onChange={activeUpd('rate')}
             min={0.1}
             max={15}
             step={0.1}
@@ -158,13 +228,13 @@ export default function App() {
           <ToggleSection
             title="🏦 ריבית צמודה לפריים"
             subtitle="מוסיף ריבית פריים על ריבית הבסיס"
-            checked={s.usePrime}
-            onToggle={tog('usePrime')}
+            checked={activeS.usePrime}
+            onToggle={activeTog('usePrime')}
           >
             <SliderControl
               label="ריבית פריים נוכחית"
-              value={s.prime}
-              onChange={upd('prime')}
+              value={activeS.prime}
+              onChange={activeUpd('prime')}
               min={0}
               max={12}
               step={0.1}
@@ -178,13 +248,13 @@ export default function App() {
           <ToggleSection
             title="📈 צמוד מדד המחירים לצרכן"
             subtitle="הקרן גדלה בהתאם למדד הצרכן"
-            checked={s.useCPI}
-            onToggle={tog('useCPI')}
+            checked={activeS.useCPI}
+            onToggle={activeTog('useCPI')}
           >
             <SliderControl
               label="אחוז עלייה שנתי צפוי"
-              value={s.cpi}
-              onChange={upd('cpi')}
+              value={activeS.cpi}
+              onChange={activeUpd('cpi')}
               min={0}
               max={10}
               step={0.1}
@@ -195,17 +265,17 @@ export default function App() {
             />
           </ToggleSection>
 
-          {!s.useCPI && (
+          {!activeS.useCPI && (
             <ToggleSection
               title="💸 שחיקת ערך ריאלי (אינפלציה)"
               subtitle="ערך הכסף בהתחשב באינפלציה"
-              checked={s.useInf}
-              onToggle={tog('useInf')}
+              checked={activeS.useInf}
+              onToggle={activeTog('useInf')}
             >
               <SliderControl
                 label="שיעור אינפלציה שנתי"
-                value={s.inf}
-                onChange={upd('inf')}
+                value={activeS.inf}
+                onChange={activeUpd('inf')}
                 min={0}
                 max={10}
                 step={0.1}
@@ -218,10 +288,14 @@ export default function App() {
         </div>
 
         {/* Results */}
-        <ResultsSection results={results} state={s} />
-
-        {/* Inflation block */}
-        {results?.showInf && <InflationNote results={results} />}
+        {compareMode ? (
+          <CompareSection resultsA={resultsA} resultsB={resultsB} stateA={s} stateB={sB} />
+        ) : (
+          <>
+            <ResultsSection results={resultsA} state={s} />
+            {resultsA?.showInf && <InflationNote results={resultsA} />}
+          </>
+        )}
 
         <footer className="text-center py-6 text-xs text-gray-400">
           © 2026 תכנופרתי |{' '}
